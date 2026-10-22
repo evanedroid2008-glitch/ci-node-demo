@@ -1,17 +1,19 @@
-name: Node.js CI
+name: Node.js CI/CD to EC2
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
 
 jobs:
-  build:
-    name: Install, build, and upload artifact
+  build-test-deploy:
+    name: Build, check, and deploy
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Check out repository
@@ -21,12 +23,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build project
         run: npm run build
+
+      - name: Check app syntax and build output
+        run: |
+          node --check index.js
+          test -s dist/index.html
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -34,3 +42,73 @@ jobs:
           name: ci-node-demo-build
           path: dist/
           if-no-files-found: error
+
+      # Deployment runs only after a push to main, never on a pull request.
+      - name: Decode SSH key and register EC2 host
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          EC2_SSH_KEY_B64: ${{ secrets.EC2_SSH_KEY_B64 }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s' "$EC2_SSH_KEY_B64" | base64 --decode > "$HOME/.ssh/ec2_key"
+          chmod 600 "$HOME/.ssh/ec2_key"
+          ssh-keyscan -T 10 -H "$EC2_HOST" >> "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Copy project to EC2
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          set -euo pipefail
+          rsync -az --delete \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='node_modules/' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='*.pem' \
+            -e "ssh -i $HOME/.ssh/ec2_key -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts" \
+            ./ "$EC2_USER@$EC2_HOST:/home/$EC2_USER/nodeapp/"
+
+      - name: Install runtime and restart app on EC2
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/ec2_key" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$EC2_USER@$EC2_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+
+          if ! command -v node >/dev/null 2>&1 || [[ "$(node -p 'process.versions.node.split(".")[0]')" != "22" ]]; then
+            sudo apt-get update -y
+            sudo apt-get install -y ca-certificates curl
+            curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+          fi
+
+          if ! command -v pm2 >/dev/null 2>&1; then
+            sudo npm install --global pm2
+          fi
+
+          cd "$HOME/nodeapp"
+          npm ci --omit=dev
+
+          if pm2 describe ci-node-demo >/dev/null 2>&1; then
+            pm2 restart ci-node-demo --update-env
+          else
+            pm2 start index.js --name ci-node-demo --update-env
+          fi
+
+          sudo env PATH="$PATH:/usr/bin" pm2 startup systemd -u "$USER" --hp "$HOME"
+          pm2 save
+          curl --fail --silent --show-error http://127.0.0.1:3000/healthz
+          REMOTE
