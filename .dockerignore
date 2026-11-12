@@ -1,0 +1,15 @@
+node_modules
+**/node_modules
+.env
+.env.*
+.git
+.github
+*.pem
+npm-debug.log*
+dist
+coverage
+.DS_Store
+docker-compose.yml
+README.md
+scripts/deploy-ec2.sh
+scripts/install-docker-ec2.sh
