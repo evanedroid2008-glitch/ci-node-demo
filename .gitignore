@@ -5,3 +5,19 @@ dist/
 !.env.example
 *.pem
 .DS_Store
+
+# Terraform local cache, state, plans, crash logs, and override files
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Keep example variable files, but don't commit the real local tfvars
+*.tfvars
+!*.tfvars.example

@@ -125,8 +125,18 @@ docker compose logs --tail=100 app db
 
 Для перевірки з'єднання в логах app шукай `PostgreSQL connection successful.`; endpoint `/api/db` повертає статус і час запиту до PostgreSQL. Якщо контейнер не став healthy, перевір `POSTGRES_PASSWORD`, стан сервісу `db` та `docker compose logs db`.
 
+## Практичне заняття 12 — Terraform IaC
+
+У папці `terraform/` є конфігурація, яка створює окремий Ubuntu 22.04 EC2 та Security Group для застосунку. Вона не змінює наявний інстанс `devops-lab`. Security Group відкриває TCP 22 для CIDR зі змінної `ssh_allowed_cidr` та TCP 3000 для вебзастосунку.
+
+Перед запуском скопіюй `terraform/terraform.tfvars.example` у локальний `terraform/terraform.tfvars` і вкажи назву наявної AWS Key Pair та довірену SSH CIDR. `key_name` — це назва Key Pair у AWS, а не шлях до `.pem` чи вміст приватного ключа. Terraform AWS credentials потрібно налаштувати окремо через AWS CLI/profile; не додавай credentials, `.pem`, `terraform.tfstate` або `.terraform/` до Git. Локальний `terraform.tfvars` ігнорується через `.gitignore`; до репозиторію додавай лише `.tfvars.example`.
+
+У PowerShell із теки `terraform` виконай `terraform fmt`, `terraform init`, `terraform validate`, `terraform plan`, перевір план, а потім `terraform apply`. Після створення скопіюй `instance_ip` у GitHub Secret `EC2_HOST`, перевір `EC2_USER` і відповідність Key Pair секрету `EC2_SSH_KEY_B64`, тоді push у `main` запустить наявний CI/CD workflow. SSH від GitHub-hosted runner може потребувати тимчасового доступу на порт 22; не залишай SSH відкритим для всіх після перевірки. Детальна інструкція є в [`terraform/README.md`](terraform/README.md).
+
+Після перевірки роботи, щоб уникнути витрат, із теки `terraform` виконай `terraform destroy` і перевір видалення Terraform-ресурсів у консолі AWS. Команда не повинна видалити окремий старий інстанс `devops-lab`.
+
 ## Безпека й обмеження
 
 - `.env`, `.pem`, `node_modules/` не включаються в Git або Docker build context; коміть лише `.env.example`.
 - Зміни в PostgreSQL зберігаються у volume і переживають заміну app-контейнера. Не запускай `docker compose down -v`, якщо треба зберегти базу.
-- CI/CD і EC2 deployment підготовлені, але з цього середовища репозиторій не публікувався, Docker image не відправлявся до Docker Hub, а EC2 не розгортався. Ці кроки залежать від налаштування власних GitHub Secrets і AWS instance.
+- У GitHub-репозиторії попередній workflow було перевірено успішно: тести, публікація Docker-образу до Docker Hub і Compose deployment на EC2 завершилися без помилок. Terraform-ресурси для Практичної 12 користувач створює окремо у своєму AWS-акаунті.

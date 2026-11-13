@@ -1,0 +1,15 @@
+# Copy this file to terraform.tfvars and replace the placeholders before running Terraform.
+aws_region   = "us-east-1"
+project_name = "ci-node-demo-p12"
+ami_id       = "" # Empty selects the latest official Ubuntu 22.04 LTS AMI in this region.
+instance_type = "t3.micro"
+
+# Use the existing AWS Key Pair name that matches the private .pem key saved in
+# GitHub secret EC2_SSH_KEY_B64. This is NOT a filesystem path or private key.
+key_name = "REPLACE_WITH_EXISTING_EC2_KEY_PAIR_NAME"
+
+# Recommended: your current public IPv4 with /32, e.g. 203.0.113.10/32.
+# GitHub-hosted Actions runners have changing IPs; do not leave SSH open to all
+# sources. For a short lab deployment only, a broad SSH rule may be temporary,
+# but remove it or run terraform destroy immediately after verification.
+ssh_allowed_cidr = "REPLACE_WITH_TRUSTED_PUBLIC_IPV4/32"
